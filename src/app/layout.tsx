@@ -2,20 +2,14 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'DFIR MCP',
-  description: 'DFIR MCP',
+  title: 'Forensic AI',
+  description: '디지털 포렌식 AI 에이전트',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang='ko'>
-      <body className='bg-slate-950 text-slate-100 antialiased'>
-        {children}
-      </body>
+    <html lang="ko">
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }
