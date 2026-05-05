@@ -61,12 +61,25 @@ export default function ForensicApp() {
   const [mcpModal, setMcpModal] = useState<McpModalState>({ open: false, stepIdx: null });
   const [mcpSearch, setMcpSearch] = useState('');
 
-  const [cases, setCases] = useState<Case[]>([
+  const DEFAULT_CASES: Case[] = [
     { id: 'DF-2026-0425', title: '20260425_김영끌_랜섬웨어', status: 'running', analyst: '김영끌', media: 'NTFS', size: '50GB', date: '2026-04-25', progress: 45 },
     { id: 'DF-2023-0820', title: 'USB 저장매체 삭제파일 복구', status: 'done', analyst: '이포렌', media: 'NTFS', size: '2.3GB', date: '2023-08-20', progress: 100 },
     { id: 'DF-2023-0901', title: '이메일 피싱 계정 추적', status: 'idle', analyst: '박디지', media: 'Archive', size: '1.2GB', date: '2023-09-01', progress: 0 },
     { id: 'DF-2023-0910', title: '사내 기밀 유출 타임라인 분석', status: 'failed', analyst: '김수사', media: 'APFS', size: '256GB', date: '2023-09-10', progress: 12 },
-  ]);
+  ];
+
+  const [cases, setCases] = useState<Case[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_CASES;
+    try {
+      const saved = localStorage.getItem('forensic_cases');
+      return saved ? JSON.parse(saved) : DEFAULT_CASES;
+    } catch { return DEFAULT_CASES; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('forensic_cases', JSON.stringify(cases));
+  }, [cases]);
+
   const [activeCase, setActiveCase] = useState<ActiveCase>({ id: 'DF-2026-0425', title: '20260425_김영끌_랜섬웨어' });
   const [newCaseModalOpen, setNewCaseModalOpen] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState('');
@@ -174,7 +187,7 @@ export default function ForensicApp() {
         setEditablePlan(result.steps.map((s: any, i: number) => ({
           step: i + 1,
           name: s.name || s.purpose || '',
-          mcp: s.mcp_server || 'Dissect MCP',
+          mcp: (s.mcp_server && s.mcp_server.toLowerCase() !== 'none') ? s.mcp_server : 'Dissect MCP',
         })));
         setWorkflowState('plan_requested');
       }
@@ -226,6 +239,7 @@ export default function ForensicApp() {
       setWorkflowState('approved');
     } catch (e) {
       console.error('approvePlan failed:', e);
+      setWorkflowState('plan_requested');
     }
   }, [activeCase.id]);
   const handleRejectPlan = useCallback(() => { setRejectedPlanSnapshot([...editablePlan]); setWorkflowState('rejected'); }, [editablePlan]);
@@ -254,7 +268,7 @@ export default function ForensicApp() {
         setEditablePlan((result as any).steps.map((s: any, i: number) => ({
           step: i + 1,
           name: s.name || s.purpose || '',
-          mcp: s.mcp_server || 'Dissect MCP',
+          mcp: (s.mcp_server && s.mcp_server.toLowerCase() !== 'none') ? s.mcp_server : 'Dissect MCP',
         })));
       }
       setWorkflowState('plan_requested');
@@ -307,6 +321,9 @@ export default function ForensicApp() {
       await api.executeAnalysis(activeCase.id);
     } catch (e) {
       console.error('executeAnalysis failed:', e);
+      runningRef.current = false;
+      setWorkflowState('approved');
+      setActiveStep(-1);
     }
   }, [workflowState, activeCase.id]);
 

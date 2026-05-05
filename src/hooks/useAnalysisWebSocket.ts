@@ -1,10 +1,11 @@
 /**
- * 분석 실시간 이벤트 WebSocket 훅
+ * 분석 실시간 이벤트 WebSocket 훅 (지수 백오프 재연결)
  */
 
 import { useEffect, useRef, useCallback } from 'react';
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+const MAX_BACKOFF = 30000;
 
 export interface WsStepEvent {
   type: 'step_started' | 'step_completed';
@@ -65,28 +66,38 @@ interface UseAnalysisWebSocketOptions {
 export function useAnalysisWebSocket({ caseId, onEvent }: UseAnalysisWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const onEventRef = useRef(onEvent);
+  const retryCountRef = useRef(0);
   onEventRef.current = onEvent;
 
   const connect = useCallback(() => {
     if (!caseId) return;
     const ws = new WebSocket(`${WS_BASE}/api/analysis/ws/${caseId}`);
 
+    ws.onopen = () => {
+      retryCountRef.current = 0;
+    };
+
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as WsEvent;
         onEventRef.current(data);
       } catch {
-        /* ignore parse errors */
+        console.warn('WS parse error:', event.data);
       }
     };
 
+    ws.onerror = (err) => {
+      console.error('WS connection error:', err);
+    };
+
     ws.onclose = () => {
-      /* auto-reconnect after 3s */
+      const delay = Math.min(1000 * 2 ** retryCountRef.current, MAX_BACKOFF);
+      retryCountRef.current += 1;
       setTimeout(() => {
         if (wsRef.current === ws) {
           connect();
         }
-      }, 3000);
+      }, delay);
     };
 
     wsRef.current = ws;

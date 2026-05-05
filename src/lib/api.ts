@@ -90,6 +90,11 @@ export const api = {
       method: 'POST',
     }),
 
+  getStatus: (caseId: string) =>
+    request<{ exists: boolean; phase?: string; plan_steps_count?: number; task_results_count?: number }>(
+      `/api/analysis/${caseId}/status`
+    ),
+
   getCases: () =>
     request<Array<Record<string, unknown>>>('/api/cases'),
 
