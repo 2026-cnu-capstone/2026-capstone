@@ -28,10 +28,11 @@ interface Props {
   selectedNode: number | null;
   onSelectNode: (idx: number) => void;
   onEdgeClick: (edge: SelectedEdge) => void;
+  dfxmlFragments?: Record<number, string>;
 }
 
 export default function WorkflowCanvas({
-  editablePlan, workflowState, activeStep, selectedNode, onSelectNode, onEdgeClick,
+  editablePlan, workflowState, activeStep, selectedNode, onSelectNode, onEdgeClick, dfxmlFragments,
 }: Props) {
   const getNodeStatus = useCallback(
     (i: number): WorkflowNodeData['nodeStatus'] => {
@@ -50,7 +51,9 @@ export default function WorkflowCanvas({
       nodeStatus: getNodeStatus(i),
       nodeIdx: i,
       isSelected: selectedNode === i,
-      dfxml: NODE_DFXML[i] ?? NODE_DFXML[0],
+      dfxml: dfxmlFragments?.[i]
+        ? { name: item.name, xml: dfxmlFragments[i] }
+        : (NODE_DFXML[i] ?? NODE_DFXML[0]),
       onSelect: onSelectNode,
     }),
     [getNodeStatus, selectedNode, onSelectNode]

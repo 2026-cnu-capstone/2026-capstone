@@ -16,6 +16,8 @@ import ReportViewerModal from './modals/ReportViewerModal';
 import {
   detectDiskImageFormat, getBasename, recommendMcpForStrategyStep, nextCaseId,
 } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { useAnalysisWebSocket, WsEvent } from '@/hooks/useAnalysisWebSocket';
 import { DEFAULT_STRATEGY_STEPS, DEFAULT_PLAN } from '@/lib/constants';
 import type {
   WorkflowState, ReportState, Case, ActiveCase, PlanStep, StrategyStep,
@@ -47,6 +49,9 @@ export default function ForensicApp() {
   const [submittedPrompt, setSubmittedPrompt] = useState('');
   const [reportState, setReportState] = useState<ReportState>('idle');
   const [showReportViewer, setShowReportViewer] = useState(false);
+  const [reportData, setReportData] = useState<{ summary: string; report: string; dfxml: string } | null>(null);
+  const [taskResults, setTaskResults] = useState<Array<{ task_id?: string; agent_name?: string; status?: string; output?: string }>>([]);
+  const [nodeDfxmlFragments, setNodeDfxmlFragments] = useState<Record<number, string>>({});
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -139,20 +144,45 @@ export default function ForensicApp() {
     setEditablePlan(prev => buildPlanFromStrategySteps(strategySteps, prev));
   }, [buildPlanFromStrategySteps, strategySteps]);
 
-  const handleIntakeSubmit = useCallback(() => {
+  const handleIntakeSubmit = useCallback(async () => {
     if (!pathStepDone || !diskImageReady || !chatInputText.trim()) return;
-    setSubmittedPrompt(chatInputText.trim());
+    const prompt = chatInputText.trim();
+    setSubmittedPrompt(prompt);
     setChatInputText('');
     setWorkflowState('plan_thinking');
     setShowReasoning(false);
-    setTimeout(() => setWorkflowState('strategy_review'), 2000);
-  }, [pathStepDone, diskImageReady, chatInputText]);
+    try {
+      const result = await api.startAnalysis({
+        case_id: activeCase.id,
+        disk_image_path: diskImagePath,
+        prompt,
+      });
+      const lines = result.strategy.split('\n').filter(l => l.trim().startsWith('-'));
+      setStrategySteps(lines.map((l, i) => ({ id: i + 1, text: l.replace(/^-\s*/, '').trim() })));
+      setWorkflowState('strategy_review');
+    } catch (e) {
+      console.error('startAnalysis failed:', e);
+      setWorkflowState('idle');
+    }
+  }, [pathStepDone, diskImageReady, chatInputText, activeCase.id, diskImagePath]);
 
-  const handleApproveStrategy = useCallback(() => {
-    syncPlanWithStrategy();
+  const handleApproveStrategy = useCallback(async () => {
     setWorkflowState('mcp_plan_thinking');
-    setTimeout(() => setWorkflowState('plan_requested'), 1200);
-  }, [syncPlanWithStrategy]);
+    try {
+      const result = await api.approveStrategy(activeCase.id, { approved: true });
+      if (result.plan_ready && result.steps) {
+        setEditablePlan(result.steps.map((s: any, i: number) => ({
+          step: i + 1,
+          name: s.name || s.purpose || '',
+          mcp: s.mcp_server || 'Dissect MCP',
+        })));
+        setWorkflowState('plan_requested');
+      }
+    } catch (e) {
+      console.error('approveStrategy failed:', e);
+      setWorkflowState('strategy_review');
+    }
+  }, [activeCase.id]);
 
   const handleStrategyEditRequest = useCallback(() => setWorkflowState('strategy_edit_request'), []);
   const handleStrategyDirectEdit = useCallback(() => setWorkflowState('strategy_editing'), []);
@@ -160,18 +190,44 @@ export default function ForensicApp() {
     strategyEditReasonRef.current = '';
     setWorkflowState('strategy_review');
   }, []);
-  const handleStrategyEditSubmit = useCallback(() => {
+  const handleStrategyEditSubmit = useCallback(async () => {
+    const feedback = strategyEditReasonRef.current.trim();
     setWorkflowState('plan_thinking');
     setShowReasoning(false);
-    setTimeout(() => { strategyEditReasonRef.current = ''; setWorkflowState('strategy_review'); }, 1800);
-  }, []);
+    try {
+      const result = await api.approveStrategy(activeCase.id, { approved: false, feedback });
+      if (result.strategy) {
+        const lines = result.strategy.split('\n').filter((l: string) => l.trim().startsWith('-'));
+        setStrategySteps(lines.map((l: string, i: number) => ({ id: i + 1, text: l.replace(/^-\s*/, '').trim() })));
+      }
+      strategyEditReasonRef.current = '';
+      setWorkflowState('strategy_review');
+    } catch (e) {
+      console.error('strategyEditSubmit failed:', e);
+      strategyEditReasonRef.current = '';
+      setWorkflowState('strategy_review');
+    }
+  }, [activeCase.id]);
 
-  const handleApproveReport = useCallback(() => {
+  const handleApproveReport = useCallback(async () => {
     setReportState('generating');
-    setTimeout(() => setReportState('done'), 2500);
-  }, []);
+    try {
+      await api.generateReport(activeCase.id);
+      setReportState('done');
+    } catch (e) {
+      console.error('generateReport failed:', e);
+      setReportState('idle');
+    }
+  }, [activeCase.id]);
 
-  const handleApprovePlan = useCallback(() => setWorkflowState('approved'), []);
+  const handleApprovePlan = useCallback(async () => {
+    try {
+      await api.approvePlan(activeCase.id, { approved: true });
+      setWorkflowState('approved');
+    } catch (e) {
+      console.error('approvePlan failed:', e);
+    }
+  }, [activeCase.id]);
   const handleRejectPlan = useCallback(() => { setRejectedPlanSnapshot([...editablePlan]); setWorkflowState('rejected'); }, [editablePlan]);
   const handleStartEdit = useCallback(() => {
     planBackupRef.current = editablePlan.map(p => ({ ...p }));
@@ -183,7 +239,7 @@ export default function ForensicApp() {
   }, []);
   const handleSubmitEdit = useCallback(() => setWorkflowState('plan_requested'), []);
   const handleCancelReject = useCallback(() => { setRejectedPlanSnapshot(null); setWorkflowState('plan_requested'); }, []);
-  const handleRerequest = useCallback(() => {
+  const handleRerequest = useCallback(async () => {
     const reason = rejectionReasonRef.current.trim();
     if (!reason) return;
     setRejectionHistory(prev => [...prev, { round: planRound, reason, plan: rejectedPlanSnapshot! }]);
@@ -191,39 +247,79 @@ export default function ForensicApp() {
     rejectionReasonRef.current = '';
     setRejectedPlanSnapshot(null);
     setWorkflowState('mcp_plan_thinking');
-    setTimeout(() => {
-      if (reason.includes('타임라인') || reason.toLowerCase().includes('timeline') || reason.includes('추가')) {
-        setEditablePlan(prev => {
-          if (prev.find(p => p.name.includes('타임라인') || p.mcp === 'Plaso MCP')) return prev;
-          const last = prev[prev.length - 1];
-          return [...prev, { step: last.step + 1, name: '타임라인 분석', mcp: 'Plaso MCP' }];
-        });
+
+    try {
+      const result = await api.approvePlan(activeCase.id, { approved: false, feedback: reason });
+      if ('steps' in result && result.steps) {
+        setEditablePlan((result as any).steps.map((s: any, i: number) => ({
+          step: i + 1,
+          name: s.name || s.purpose || '',
+          mcp: s.mcp_server || 'Dissect MCP',
+        })));
       }
       setWorkflowState('plan_requested');
-    }, 1200);
-  }, [planRound, rejectedPlanSnapshot]);
+    } catch (e) {
+      console.error('rerequest failed:', e);
+      setWorkflowState('plan_requested');
+    }
+  }, [planRound, rejectedPlanSnapshot, activeCase.id]);
+
+  const handleWsEvent = useCallback((event: WsEvent) => {
+    switch (event.type) {
+      case 'step_started':
+        setActiveStep(event.step_index);
+        break;
+      case 'step_completed':
+        if ('dfxml_fragment' in event && event.dfxml_fragment) {
+          setNodeDfxmlFragments(prev => ({ ...prev, [event.step_index]: event.dfxml_fragment as string }));
+        }
+        break;
+      case 'execution_done':
+        setActiveStep(-1);
+        setWorkflowState('done');
+        runningRef.current = false;
+        if ('task_results' in event) {
+          setTaskResults(event.task_results as any[]);
+        }
+        break;
+      case 'report_ready':
+        setReportState('done');
+        if ('summary' in event) {
+          setReportData({ summary: event.summary, report: event.report, dfxml: event.dfxml });
+        }
+        break;
+      case 'error':
+        console.error('WS error:', (event as any).message);
+        break;
+    }
+  }, []);
+
+  useAnalysisWebSocket({
+    caseId: activeCase.id || null,
+    onEvent: handleWsEvent,
+  });
 
   const handleRunWorkflow = useCallback(async () => {
     if (workflowState !== 'approved') return;
     runningRef.current = true;
     setWorkflowState('running');
-    const delay = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
-    for (let i = 0; i < editablePlan.length; i++) {
-      if (!runningRef.current) return;
-      setActiveStep(i);
-      await delay(2000);
+    try {
+      await api.executeAnalysis(activeCase.id);
+    } catch (e) {
+      console.error('executeAnalysis failed:', e);
     }
-    if (!runningRef.current) return;
-    setActiveStep(-1);
-    await delay(1000);
-    setWorkflowState('done');
-  }, [workflowState, editablePlan]);
+  }, [workflowState, activeCase.id]);
 
-  const handlePauseWorkflow = useCallback(() => {
+  const handlePauseWorkflow = useCallback(async () => {
     runningRef.current = false;
     setWorkflowState('approved');
     setActiveStep(-1);
-  }, []);
+    try {
+      await api.pauseAnalysis(activeCase.id);
+    } catch (e) {
+      console.error('pauseAnalysis failed:', e);
+    }
+  }, [activeCase.id]);
 
   const handleSelectNode = useCallback((idx: number) => {
     setSelectedNode(prev => prev === idx ? null : idx);
@@ -292,6 +388,9 @@ export default function ForensicApp() {
           editablePlan={editablePlan}
           submittedPrompt={submittedPrompt}
           onClose={() => setShowReportViewer(false)}
+          reportData={reportData}
+          taskResults={taskResults}
+          diskImagePath={diskImagePath}
         />
       )}
 
@@ -371,6 +470,7 @@ export default function ForensicApp() {
                   selectedNode={selectedNode}
                   onSelectNode={handleSelectNode}
                   onEdgeClick={setSelectedEdge}
+                  dfxmlFragments={nodeDfxmlFragments}
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">
