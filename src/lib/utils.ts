@@ -78,10 +78,10 @@ export function getDiskImageMetaRows(path: string, check: { ok: boolean; format:
 
 export function recommendMcpForStrategyStep(stepText: string): string {
   const t = String(stepText || '').toLowerCase();
-  if (t.includes('mft') || t.includes('파일시스템') || t.includes('ntfs') || t.includes('아티팩트')) return 'Dissect MCP';
-  if (t.includes('카빙') || t.includes('삭제') || t.includes('복구')) return 'Scalpel MCP';
-  if (t.includes('메타데이터') || t.includes('타임스탬프') || t.includes('exif')) return 'ExifTool MCP';
-  if (t.includes('타임라인')) return 'Plaso MCP';
+  if (t.includes('mft') && (t.includes('타임라인') || t.includes('timeline'))) return 'Dissect MCP';
+  if (t.includes('카빙') || t.includes('복구')) return 'Scalpel MCP';
+  if (t.includes('메타데이터') || t.includes('exif')) return 'ExifTool MCP';
+  if (t.includes('타임라인') || t.includes('timeline')) return 'Plaso MCP';
   return 'Dissect MCP';
 }
 

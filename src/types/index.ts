@@ -68,8 +68,7 @@ export interface NodeIO {
 
 export interface DfxmlNode {
   name: string;
-  input_xml: string;
-  output_xml: string;
+  xml: string;
 }
 
 export interface RejectionRecord {
