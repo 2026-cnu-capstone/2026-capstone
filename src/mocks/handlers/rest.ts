@@ -2,6 +2,7 @@ import { http, HttpResponse, delay } from 'msw';
 import { MOCK_CASES } from '../data/cases';
 import { MOCK_STRATEGY_TEXT, MOCK_REVISED_STRATEGY_TEXT } from '../data/strategy';
 import { MOCK_PLAN_STEPS, MOCK_PLAN_TEXT } from '../data/plan';
+import { simulateExecution, emitReportReady } from './ws';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -89,11 +90,13 @@ export const restHandlers = [
     });
   }),
 
-  // 실행 트리거 (실제 진행은 WS가 보낸다)
+  // 실행 트리거 — REST는 즉시 응답하고 WS가 단계별 이벤트를 비동기로 emit
   http.post(`${API_BASE}/api/analysis/:caseId/execute`, async ({ params }) => {
-    const session = sessionState.get(params.caseId as string) ?? { stepCount: MOCK_PLAN_STEPS.length };
-    sessionState.set(params.caseId as string, session);
+    const caseId = params.caseId as string;
+    const session = sessionState.get(caseId) ?? { stepCount: MOCK_PLAN_STEPS.length };
+    sessionState.set(caseId, session);
     await delay(150);
+    setTimeout(() => simulateExecution(caseId), 200);
     return HttpResponse.json({ status: 'running', total_steps: session.stepCount });
   }),
 
@@ -102,13 +105,16 @@ export const restHandlers = [
     return HttpResponse.json({ status: 'paused' });
   }),
 
-  http.post(`${API_BASE}/api/analysis/:caseId/report`, async () => {
-    await delay(1100);
-    return HttpResponse.json({
+  http.post(`${API_BASE}/api/analysis/:caseId/report`, async ({ params }) => {
+    const caseId = params.caseId as string;
+    const payload = {
       summary: '랜섬웨어가 2023-09-15 02:30~02:36에 svchost32.exe 형태로 실행되었으며, 142건의 파일이 암호화되고 VSS 3건이 삭제되었습니다.',
       report: '1. 침입 경로: 피싱 메일 첨부(security_patch.zip) → PCOptimizer 설치\n2. 실행: svchost32.exe — userassist 14회, prefetch 1회 기록\n3. 영향: report_2023.xlsx 외 142개 파일 .locked 확장자 변경\n4. 안티포렌식: vssadmin delete shadows /all로 VSS-003~005 삭제\n5. C2: 45.33.32.156:443 / 185.220.101.34:8443 로 524KB 외부 전송 의심',
       dfxml: '<dfxml version="1.2"><summary total_steps="10" success="10" anomalies="3"/></dfxml>',
-    });
+    };
+    await delay(1100);
+    setTimeout(() => emitReportReady(caseId, payload), 50);
+    return HttpResponse.json(payload);
   }),
 
   http.get(`${API_BASE}/api/analysis/:caseId/status`, () => {
