@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ChevronRight, Play, Pause, Plus } from 'lucide-react';
 
@@ -13,18 +13,14 @@ import McpModal from './modals/McpModal';
 import EdgeModal from './modals/EdgeModal';
 import ReportViewerModal from './modals/ReportViewerModal';
 
-import {
-  detectDiskImageFormat, recommendMcpForStrategyStep,
-} from '@/lib/utils';
-import { api } from '@/lib/api';
-import { useAnalysisWebSocket, WsEvent } from '@/hooks/useAnalysisWebSocket';
+import { detectDiskImageFormat } from '@/lib/utils';
+import { useAnalysisWebSocket } from '@/hooks/useAnalysisWebSocket';
 import { useSplitter } from '@/hooks/useSplitter';
 import { useCases } from '@/hooks/useCases';
 import { useReportRun } from '@/hooks/useReportRun';
-import { DEFAULT_STRATEGY_STEPS, DEFAULT_PLAN } from '@/lib/constants';
+import { useWorkflow } from '@/hooks/useWorkflow';
 import type {
-  WorkflowState, ActiveCase, PlanStep, StrategyStep,
-  RejectionRecord, SelectedEdge, McpModalState, CaseSort,
+  ActiveCase, SelectedEdge, McpModalState, CaseSort,
 } from '@/types';
 
 const WorkflowCanvas = dynamic(() => import('./WorkflowCanvas'), { ssr: false });
@@ -34,35 +30,14 @@ export default function ForensicApp() {
   const [diskImagePath, setDiskImagePath] = useState('');
   const [attachedFile, setAttachedFile] = useState<{ name: string } | null>(null);
   const [pathStepDone, setPathStepDone] = useState(false);
-  const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
   const { width: panelWidth, startDragging: startSplitterDrag } = useSplitter();
 
-  const rejectionReasonRef = useRef('');
-  const strategyEditReasonRef = useRef('');
-  const strategyBackupRef = useRef<StrategyStep[]>(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
-  const planBackupRef = useRef<PlanStep[]>(DEFAULT_PLAN.map(p => ({ ...p })));
-  const runningRef = useRef(false);
-
-  const [rejectionHistory, setRejectionHistory] = useState<RejectionRecord[]>([]);
-  const [rejectedPlanSnapshot, setRejectedPlanSnapshot] = useState<PlanStep[] | null>(null);
-  const [planRound, setPlanRound] = useState(1);
-  const [strategySteps, setStrategySteps] = useState<StrategyStep[]>(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
   const [chatInputText, setChatInputText] = useState('');
   const [submittedPrompt, setSubmittedPrompt] = useState('');
-  const reportRun = useReportRun();
-  const {
-    reportState, reportData, taskResults, elapsedTime,
-    showReportViewer, setShowReportViewer,
-    markRunStart, markRunCompleted, handleReportReady,
-    approveReport, downloadReport, reset: resetReportRun,
-  } = reportRun;
-  const [nodeDfxmlFragments, setNodeDfxmlFragments] = useState<Record<number, string>>({});
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
-  const [activeStep, setActiveStep] = useState(-1);
-  const [editablePlan, setEditablePlan] = useState<PlanStep[]>(DEFAULT_PLAN.map(p => ({ ...p })));
   const [mcpModal, setMcpModal] = useState<McpModalState>({ open: false, stepIdx: null });
   const [mcpSearch, setMcpSearch] = useState('');
 
@@ -75,29 +50,34 @@ export default function ForensicApp() {
   const [caseSort, setCaseSort] = useState<CaseSort>('dateDesc');
   const [caseFilterMenu, setCaseFilterMenu] = useState<string | null>(null);
 
+  const reportRun = useReportRun();
+  const workflow = useWorkflow({
+    caseId: activeCase.id,
+    markRunStart: reportRun.markRunStart,
+    markRunCompleted: reportRun.markRunCompleted,
+    handleReportReady: reportRun.handleReportReady,
+  });
+
+  useAnalysisWebSocket({
+    caseId: activeCase.id || null,
+    onEvent: workflow.handleWsEvent,
+  });
+
   const diskImageCheck = detectDiskImageFormat(diskImagePath);
   const diskImageReady = diskImageCheck.ok;
 
   const navigateToBuilder = useCallback((caseInfo: ActiveCase) => {
     if (caseInfo?.id) setActiveCase({ id: caseInfo.id, title: caseInfo.title || '새 케이스' });
     setCurrentView('builder');
-    setWorkflowState('idle');
     setDiskImagePath('');
     setAttachedFile(null);
     setPathStepDone(false);
-    rejectionReasonRef.current = '';
-    strategyEditReasonRef.current = '';
-    setRejectionHistory([]);
-    setRejectedPlanSnapshot(null);
-    setPlanRound(1);
     setChatInputText('');
     setSubmittedPrompt('');
-    resetReportRun();
-    setEditablePlan(DEFAULT_PLAN.map(p => ({ ...p })));
-    setStrategySteps(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
     setSelectedNode(null);
-    setActiveStep(-1);
-  }, []);
+    workflow.reset();
+    reportRun.reset();
+  }, [setActiveCase, workflow, reportRun]);
 
   const handleCreateNewCase = useCallback(() => {
     if (!createCase(newCaseTitle)) return;
@@ -105,204 +85,45 @@ export default function ForensicApp() {
     setNewCaseTitle('');
   }, [createCase, newCaseTitle]);
 
-  const buildPlanFromStrategySteps = useCallback((steps: StrategyStep[], prevPlan: PlanStep[] = []) =>
-    steps.map((step, idx) => ({
-      step: idx + 1,
-      name: step.text,
-      mcp: prevPlan[idx]?.mcp || recommendMcpForStrategyStep(step.text),
-    })), []);
-
-  const syncPlanWithStrategy = useCallback(() => {
-    setEditablePlan(prev => buildPlanFromStrategySteps(strategySteps, prev));
-  }, [buildPlanFromStrategySteps, strategySteps]);
-
   const handleIntakeSubmit = useCallback(async () => {
     if (!pathStepDone || !diskImageReady || !chatInputText.trim()) return;
     const prompt = chatInputText.trim();
     setSubmittedPrompt(prompt);
     setChatInputText('');
-    setWorkflowState('plan_thinking');
     setShowReasoning(false);
-    try {
-      const result = await api.startAnalysis({
-        case_id: activeCase.id,
-        disk_image_path: diskImagePath,
-        prompt,
-      });
-      const lines = result.strategy.split('\n').filter(l => l.trim().startsWith('-'));
-      setStrategySteps(lines.map((l, i) => ({ id: i + 1, text: l.replace(/^-\s*/, '').trim() })));
-      setWorkflowState('strategy_review');
-    } catch (e) {
-      console.error('startAnalysis failed:', e);
-      setWorkflowState('idle');
-    }
-  }, [pathStepDone, diskImageReady, chatInputText, activeCase.id, diskImagePath]);
+    await workflow.submitIntake(diskImagePath, prompt);
+  }, [pathStepDone, diskImageReady, chatInputText, diskImagePath, workflow]);
 
-  const handleApproveStrategy = useCallback(async () => {
-    setWorkflowState('mcp_plan_thinking');
-    try {
-      const result = await api.approveStrategy(activeCase.id, { approved: true });
-      if (result.plan_ready && result.steps) {
-        setEditablePlan(result.steps.map((s: any, i: number) => ({
-          step: i + 1,
-          name: s.name || s.purpose || '',
-          mcp: (s.mcp_server && s.mcp_server.toLowerCase() !== 'none') ? s.mcp_server : 'Dissect MCP',
-        })));
-        setWorkflowState('plan_requested');
-      }
-    } catch (e) {
-      console.error('approveStrategy failed:', e);
-      setWorkflowState('strategy_review');
-    }
-  }, [activeCase.id]);
-
-  const handleStrategyEditRequest = useCallback(() => setWorkflowState('strategy_edit_request'), []);
-  const handleStrategyDirectEdit = useCallback(() => setWorkflowState('strategy_editing'), []);
-  const handleStrategyEditCancel = useCallback(() => {
-    strategyEditReasonRef.current = '';
-    setWorkflowState('strategy_review');
-  }, []);
   const handleStrategyEditSubmit = useCallback(async () => {
-    const feedback = strategyEditReasonRef.current.trim();
-    setWorkflowState('plan_thinking');
     setShowReasoning(false);
-    try {
-      const result = await api.approveStrategy(activeCase.id, { approved: false, feedback });
-      if (result.strategy) {
-        const lines = result.strategy.split('\n').filter((l: string) => l.trim().startsWith('-'));
-        setStrategySteps(lines.map((l: string, i: number) => ({ id: i + 1, text: l.replace(/^-\s*/, '').trim() })));
-      }
-      strategyEditReasonRef.current = '';
-      setWorkflowState('strategy_review');
-    } catch (e) {
-      console.error('strategyEditSubmit failed:', e);
-      strategyEditReasonRef.current = '';
-      setWorkflowState('strategy_review');
-    }
-  }, [activeCase.id]);
+    await workflow.submitStrategyEdit();
+  }, [workflow]);
 
-  const handleApproveReport = useCallback(() => approveReport(activeCase.id), [approveReport, activeCase.id]);
-  const handleDownloadReport = useCallback(
-    () => downloadReport(activeCase, submittedPrompt),
-    [downloadReport, activeCase, submittedPrompt]
+  const handleApproveReport = useCallback(
+    () => reportRun.approveReport(activeCase.id),
+    [reportRun, activeCase.id]
   );
-
-  const handleApprovePlan = useCallback(async () => {
-    try {
-      await api.approvePlan(activeCase.id, { approved: true });
-      setWorkflowState('approved');
-    } catch (e) {
-      console.error('approvePlan failed:', e);
-      setWorkflowState('plan_requested');
-    }
-  }, [activeCase.id]);
-  const handleRejectPlan = useCallback(() => { setRejectedPlanSnapshot([...editablePlan]); setWorkflowState('rejected'); }, [editablePlan]);
-  const handleStartEdit = useCallback(() => {
-    planBackupRef.current = editablePlan.map(p => ({ ...p }));
-    setWorkflowState('editing');
-  }, [editablePlan]);
-  const handleCancelEdit = useCallback(() => {
-    setEditablePlan(planBackupRef.current.map(p => ({ ...p })));
-    setWorkflowState('plan_requested');
-  }, []);
-  const handleSubmitEdit = useCallback(() => setWorkflowState('plan_requested'), []);
-  const handleCancelReject = useCallback(() => { setRejectedPlanSnapshot(null); setWorkflowState('plan_requested'); }, []);
-  const handleRerequest = useCallback(async () => {
-    const reason = rejectionReasonRef.current.trim();
-    if (!reason) return;
-    setRejectionHistory(prev => [...prev, { round: planRound, reason, plan: rejectedPlanSnapshot! }]);
-    setPlanRound(p => p + 1);
-    rejectionReasonRef.current = '';
-    setRejectedPlanSnapshot(null);
-    setWorkflowState('mcp_plan_thinking');
-
-    try {
-      const result = await api.approvePlan(activeCase.id, { approved: false, feedback: reason });
-      if ('steps' in result && result.steps) {
-        setEditablePlan((result as any).steps.map((s: any, i: number) => ({
-          step: i + 1,
-          name: s.name || s.purpose || '',
-          mcp: (s.mcp_server && s.mcp_server.toLowerCase() !== 'none') ? s.mcp_server : 'Dissect MCP',
-        })));
-      }
-      setWorkflowState('plan_requested');
-    } catch (e) {
-      console.error('rerequest failed:', e);
-      setWorkflowState('plan_requested');
-    }
-  }, [planRound, rejectedPlanSnapshot, activeCase.id]);
-
-  const handleWsEvent = useCallback((event: WsEvent) => {
-    switch (event.type) {
-      case 'step_started':
-        setActiveStep(event.step_index);
-        break;
-      case 'step_completed':
-        if ('dfxml_fragment' in event && event.dfxml_fragment) {
-          setNodeDfxmlFragments(prev => ({ ...prev, [event.step_index]: event.dfxml_fragment as string }));
-        }
-        break;
-      case 'execution_done':
-        setActiveStep(-1);
-        setWorkflowState('done');
-        runningRef.current = false;
-        markRunCompleted('task_results' in event ? (event.task_results as any[]) : undefined);
-        break;
-      case 'report_ready':
-        if ('summary' in event) {
-          handleReportReady({ summary: event.summary, report: event.report, dfxml: event.dfxml });
-        }
-        break;
-      case 'error':
-        console.error('WS error:', (event as any).message);
-        break;
-    }
-  }, [markRunCompleted, handleReportReady]);
-
-  useAnalysisWebSocket({
-    caseId: activeCase.id || null,
-    onEvent: handleWsEvent,
-  });
-
-  const handleRunWorkflow = useCallback(async () => {
-    if (workflowState !== 'approved') return;
-    runningRef.current = true;
-    markRunStart();
-    setWorkflowState('running');
-    try {
-      await api.executeAnalysis(activeCase.id);
-    } catch (e) {
-      console.error('executeAnalysis failed:', e);
-      runningRef.current = false;
-      setWorkflowState('approved');
-      setActiveStep(-1);
-    }
-  }, [workflowState, activeCase.id, markRunStart]);
-
-  const handlePauseWorkflow = useCallback(async () => {
-    runningRef.current = false;
-    setWorkflowState('approved');
-    setActiveStep(-1);
-    try {
-      await api.pauseAnalysis(activeCase.id);
-    } catch (e) {
-      console.error('pauseAnalysis failed:', e);
-    }
-  }, [activeCase.id]);
+  const handleDownloadReport = useCallback(
+    () => reportRun.downloadReport(activeCase, submittedPrompt),
+    [reportRun, activeCase, submittedPrompt]
+  );
 
   const handleSelectNode = useCallback((idx: number) => {
     setSelectedNode(prev => prev === idx ? null : idx);
   }, []);
 
-  const openMcpModal = useCallback((stepIdx: number) => { setMcpModal({ open: true, stepIdx }); setMcpSearch(''); }, []);
+  const openMcpModal = useCallback((stepIdx: number) => {
+    setMcpModal({ open: true, stepIdx });
+    setMcpSearch('');
+  }, []);
   const selectMcp = useCallback((toolName: string) => {
-    setEditablePlan(prev => {
+    workflow.setEditablePlan(prev => {
       const next = [...prev];
       if (mcpModal.stepIdx !== null) next[mcpModal.stepIdx] = { ...next[mcpModal.stepIdx], mcp: toolName };
       return next;
     });
     setMcpModal({ open: false, stepIdx: null });
-  }, [mcpModal.stepIdx]);
+  }, [mcpModal.stepIdx, workflow]);
 
   const handleDeleteCase = useCallback(() => {
     if (!confirmDeleteId) return;
@@ -310,11 +131,15 @@ export default function ForensicApp() {
     setConfirmDeleteId(null);
   }, [confirmDeleteId, deleteCase]);
 
-  const isCanvasVisible = ['approved', 'running', 'done'].includes(workflowState);
+  const handleRunWorkflow = useCallback(() => {
+    if (workflow.workflowState !== 'approved') return;
+    return workflow.runWorkflow();
+  }, [workflow]);
+
+  const isCanvasVisible = ['approved', 'running', 'done'].includes(workflow.workflowState);
 
   return (
     <div className="flex h-screen w-screen bg-f-bg text-f-t1 overflow-hidden font-sans text-[13px]">
-      {/* Modals */}
       {confirmDeleteId && (
         <DeleteCaseModal
           caseId={confirmDeleteId}
@@ -333,7 +158,7 @@ export default function ForensicApp() {
       {mcpModal.open && mcpModal.stepIdx !== null && (
         <McpModal
           stepIdx={mcpModal.stepIdx}
-          editablePlan={editablePlan}
+          editablePlan={workflow.editablePlan}
           mcpSearch={mcpSearch}
           setMcpSearch={setMcpSearch}
           onSelect={selectMcp}
@@ -343,17 +168,17 @@ export default function ForensicApp() {
       {selectedEdge !== null && (
         <EdgeModal
           selectedEdge={selectedEdge}
-          editablePlan={editablePlan}
+          editablePlan={workflow.editablePlan}
           onClose={() => setSelectedEdge(null)}
         />
       )}
-      {showReportViewer && (
+      {reportRun.showReportViewer && (
         <ReportViewerModal
-          editablePlan={editablePlan}
+          editablePlan={workflow.editablePlan}
           submittedPrompt={submittedPrompt}
-          onClose={() => setShowReportViewer(false)}
-          reportData={reportData}
-          taskResults={taskResults}
+          onClose={() => reportRun.setShowReportViewer(false)}
+          reportData={reportRun.reportData}
+          taskResults={reportRun.taskResults}
           diskImagePath={diskImagePath}
         />
       )}
@@ -361,7 +186,6 @@ export default function ForensicApp() {
       <NavRail currentView={currentView} onViewChange={setCurrentView} />
 
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
         <div className="h-10 bg-f-surface border-b border-f-border flex items-center justify-between px-4 shrink-0 select-none">
           <div className="flex items-center text-xs">
             <span
@@ -389,7 +213,7 @@ export default function ForensicApp() {
                 <Plus size={13} /> 새 케이스
               </button>
             )}
-            {currentView === 'builder' && workflowState === 'approved' && (
+            {currentView === 'builder' && workflow.workflowState === 'approved' && (
               <button
                 onClick={handleRunWorkflow}
                 className="h-7 px-3 bg-f-accent border-none rounded-[5px] text-white text-xs font-medium cursor-pointer flex items-center gap-1 hover:bg-blue-700 transition-colors"
@@ -397,15 +221,14 @@ export default function ForensicApp() {
                 <Play size={12} fill="currentColor" /> 워크플로 실행
               </button>
             )}
-            {currentView === 'builder' && workflowState === 'running' && (
-              <button onClick={handlePauseWorkflow} className="h-7 px-3 bg-f-warn border-none rounded-[5px] text-white text-xs font-medium cursor-pointer flex items-center gap-1">
+            {currentView === 'builder' && workflow.workflowState === 'running' && (
+              <button onClick={workflow.pauseWorkflow} className="h-7 px-3 bg-f-warn border-none rounded-[5px] text-white text-xs font-medium cursor-pointer flex items-center gap-1">
                 <Pause size={12} fill="currentColor" /> 일시정지
               </button>
             )}
           </div>
         </div>
 
-        {/* Main content */}
         {currentView === 'list' ? (
           <CaseListView
             cases={cases}
@@ -424,17 +247,16 @@ export default function ForensicApp() {
           />
         ) : (
           <div className="flex-1 flex min-h-0 overflow-hidden">
-            {/* Canvas area */}
             <div className="flex-1 relative overflow-hidden bg-f-canvas-bg">
               {isCanvasVisible ? (
                 <WorkflowCanvas
-                  editablePlan={editablePlan}
-                  workflowState={workflowState}
-                  activeStep={activeStep}
+                  editablePlan={workflow.editablePlan}
+                  workflowState={workflow.workflowState}
+                  activeStep={workflow.activeStep}
                   selectedNode={selectedNode}
                   onSelectNode={handleSelectNode}
                   onEdgeClick={setSelectedEdge}
-                  dfxmlFragments={nodeDfxmlFragments}
+                  dfxmlFragments={workflow.nodeDfxmlFragments}
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -446,19 +268,17 @@ export default function ForensicApp() {
               )}
             </div>
 
-            {/* Splitter */}
             <div
               className="w-[3px] bg-f-border hover:bg-f-accent cursor-col-resize shrink-0 z-10 transition-colors"
               onMouseDown={startSplitterDrag}
             />
 
-            {/* Analysis panel */}
             <div
               className="border-l border-f-border flex flex-col min-h-0 shrink-0"
               style={{ width: panelWidth }}
             >
               <AnalysisPanel
-                workflowState={workflowState}
+                workflowState={workflow.workflowState}
                 diskImagePath={diskImagePath}
                 diskImageReady={diskImageReady}
                 diskImageCheck={diskImageCheck}
@@ -469,37 +289,37 @@ export default function ForensicApp() {
                 chatInputText={chatInputText}
                 setChatInputText={setChatInputText}
                 submittedPrompt={submittedPrompt}
-                strategySteps={strategySteps}
-                setStrategySteps={setStrategySteps}
-                editablePlan={editablePlan}
-                setEditablePlan={setEditablePlan}
-                planRound={planRound}
-                rejectionHistory={rejectionHistory}
+                strategySteps={workflow.strategySteps}
+                setStrategySteps={workflow.setStrategySteps}
+                editablePlan={workflow.editablePlan}
+                setEditablePlan={workflow.setEditablePlan}
+                planRound={workflow.planRound}
+                rejectionHistory={workflow.rejectionHistory}
                 showReasoning={showReasoning}
                 setShowReasoning={setShowReasoning}
-                reportState={reportState}
-                setShowReportViewer={setShowReportViewer}
-                rejectionReasonRef={rejectionReasonRef}
-                strategyEditReasonRef={strategyEditReasonRef}
-                strategyBackupRef={strategyBackupRef}
+                reportState={reportRun.reportState}
+                setShowReportViewer={reportRun.setShowReportViewer}
+                rejectionReasonRef={workflow.rejectionReasonRef}
+                strategyEditReasonRef={workflow.strategyEditReasonRef}
+                strategyBackupRef={workflow.strategyBackupRef}
                 onIntakeSubmit={handleIntakeSubmit}
-                onApproveStrategy={handleApproveStrategy}
-                onStrategyEditRequest={handleStrategyEditRequest}
-                onStrategyEditCancel={handleStrategyEditCancel}
+                onApproveStrategy={workflow.approveStrategy}
+                onStrategyEditRequest={workflow.requestStrategyEdit}
+                onStrategyEditCancel={workflow.cancelStrategyEdit}
                 onStrategyEditSubmit={handleStrategyEditSubmit}
-                onSyncPlanWithStrategy={syncPlanWithStrategy}
-                onStrategyDirectEdit={handleStrategyDirectEdit}
-                onApprovePlan={handleApprovePlan}
-                onRejectPlan={handleRejectPlan}
-                onStartEdit={handleStartEdit}
-                onCancelEdit={handleCancelEdit}
-                onSubmitEdit={handleSubmitEdit}
-                onCancelReject={handleCancelReject}
-                onRerequest={handleRerequest}
+                onSyncPlanWithStrategy={workflow.syncPlanWithStrategy}
+                onStrategyDirectEdit={workflow.startStrategyDirectEdit}
+                onApprovePlan={workflow.approvePlan}
+                onRejectPlan={workflow.rejectPlan}
+                onStartEdit={workflow.startPlanEdit}
+                onCancelEdit={workflow.cancelPlanEdit}
+                onSubmitEdit={workflow.submitPlanEdit}
+                onCancelReject={workflow.cancelReject}
+                onRerequest={workflow.rerequest}
                 onApproveReport={handleApproveReport}
                 onOpenMcpModal={openMcpModal}
-                taskResults={taskResults}
-                elapsedTime={elapsedTime}
+                taskResults={reportRun.taskResults}
+                elapsedTime={reportRun.elapsedTime}
                 onDownloadReport={handleDownloadReport}
                 onEvidenceFilePick={e => {
                   const file = e.target.files?.[0];
