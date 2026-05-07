@@ -80,8 +80,9 @@ export default function ForensicApp() {
     reportRun.reset();
   }, [setActiveCase, workflow, reportRun]);
 
-  const handleCreateNewCase = useCallback(() => {
-    if (!createCase(newCaseTitle)) return;
+  const handleCreateNewCase = useCallback(async () => {
+    const created = await createCase(newCaseTitle);
+    if (!created) return;
     setNewCaseModalOpen(false);
     setNewCaseTitle('');
   }, [createCase, newCaseTitle]);
@@ -126,9 +127,9 @@ export default function ForensicApp() {
     setMcpModal({ open: false, stepIdx: null });
   }, [mcpModal.stepIdx, workflow]);
 
-  const handleDeleteCase = useCallback(() => {
+  const handleDeleteCase = useCallback(async () => {
     if (!confirmDeleteId) return;
-    deleteCase(confirmDeleteId);
+    await deleteCase(confirmDeleteId);
     setConfirmDeleteId(null);
   }, [confirmDeleteId, deleteCase]);
 

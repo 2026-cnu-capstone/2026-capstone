@@ -17,7 +17,6 @@ import {
 import '@xyflow/react/dist/style.css';
 import WorkflowNode, { type WorkflowNodeType } from './nodes/WorkflowNode';
 import type { PlanStep, WorkflowNodeData, SelectedEdge } from '@/types';
-import { NODE_DFXML, NODE_IO } from '@/lib/constants';
 
 const nodeTypes: NodeTypes = { workflowNode: WorkflowNode };
 
@@ -45,18 +44,16 @@ export default function WorkflowCanvas({
   );
 
   const buildNodeData = useCallback(
-    (item: PlanStep, i: number) => ({
+    (item: PlanStep, i: number): WorkflowNodeData => ({
       title: item.name,
       tool: item.mcp,
       nodeStatus: getNodeStatus(i),
       nodeIdx: i,
       isSelected: selectedNode === i,
-      dfxml: dfxmlFragments?.[i]
-        ? { name: item.name, xml: dfxmlFragments[i] }
-        : (NODE_DFXML[i] ?? NODE_DFXML[0]),
+      dfxml: { name: item.name, xml: dfxmlFragments?.[i] ?? '' },
       onSelect: onSelectNode,
     }),
-    [getNodeStatus, selectedNode, onSelectNode]
+    [getNodeStatus, selectedNode, onSelectNode, dfxmlFragments]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNodeType>([]);
@@ -96,16 +93,15 @@ export default function WorkflowCanvas({
   // 엣지 갱신
   useEffect(() => {
     setEdges(
-      editablePlan.slice(0, -1).map((_, i) => {
+      editablePlan.slice(0, -1).map((step, i) => {
         const isActive = workflowState === 'running' && i <= activeStep;
-        const io = NODE_IO[i];
         return {
           id: `edge-${i}`,
           source: `node-${i}`,
           target: `node-${i + 1}`,
           type: 'smoothstep',
           animated: isActive,
-          label: io?.edgeLabel ?? '',
+          label: step.edgeLabel ?? '',
           labelStyle: { fontSize: 9, fill: '#9ca3af' },
           style: { stroke: isActive ? '#2563eb' : '#d1d5db', strokeWidth: 1.5 },
           markerEnd: { type: 'arrowclosed' as const, color: isActive ? '#2563eb' : '#d1d5db' },

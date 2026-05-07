@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { recommendMcpForStrategyStep } from '@/lib/utils';
-import { DEFAULT_PLAN, DEFAULT_STRATEGY_STEPS } from '@/lib/constants';
 import type { WsEvent } from '@/hooks/useAnalysisWebSocket';
 import type { TaskResult, ReportData } from '@/hooks/useReportRun';
 import type { PlanStep, RejectionRecord, StrategyStep, WorkflowState } from '@/types';
@@ -25,17 +24,14 @@ function parsePlanSteps(steps: any[]): PlanStep[] {
     step: i + 1,
     name: s.name || s.purpose || '',
     mcp: s.mcp_server && s.mcp_server.toLowerCase() !== 'none' ? s.mcp_server : 'Dissect MCP',
+    edgeLabel: s.edge_label ?? null,
   }));
 }
 
 export function useWorkflow({ caseId, markRunStart, markRunCompleted, handleReportReady }: UseWorkflowOptions) {
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
-  const [strategySteps, setStrategySteps] = useState<StrategyStep[]>(
-    DEFAULT_STRATEGY_STEPS.map(s => ({ ...s }))
-  );
-  const [editablePlan, setEditablePlan] = useState<PlanStep[]>(
-    DEFAULT_PLAN.map(p => ({ ...p }))
-  );
+  const [strategySteps, setStrategySteps] = useState<StrategyStep[]>([]);
+  const [editablePlan, setEditablePlan] = useState<PlanStep[]>([]);
   const [planRound, setPlanRound] = useState(1);
   const [rejectionHistory, setRejectionHistory] = useState<RejectionRecord[]>([]);
   const [rejectedPlanSnapshot, setRejectedPlanSnapshot] = useState<PlanStep[] | null>(null);
@@ -44,14 +40,14 @@ export function useWorkflow({ caseId, markRunStart, markRunCompleted, handleRepo
 
   const rejectionReasonRef = useRef('');
   const strategyEditReasonRef = useRef('');
-  const strategyBackupRef = useRef<StrategyStep[]>(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
-  const planBackupRef = useRef<PlanStep[]>(DEFAULT_PLAN.map(p => ({ ...p })));
+  const strategyBackupRef = useRef<StrategyStep[]>([]);
+  const planBackupRef = useRef<PlanStep[]>([]);
   const runningRef = useRef(false);
 
   const reset = useCallback(() => {
     setWorkflowState('idle');
-    setStrategySteps(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
-    setEditablePlan(DEFAULT_PLAN.map(p => ({ ...p })));
+    setStrategySteps([]);
+    setEditablePlan([]);
     setPlanRound(1);
     setRejectionHistory([]);
     setRejectedPlanSnapshot(null);
@@ -59,6 +55,8 @@ export function useWorkflow({ caseId, markRunStart, markRunCompleted, handleRepo
     setNodeDfxmlFragments({});
     rejectionReasonRef.current = '';
     strategyEditReasonRef.current = '';
+    strategyBackupRef.current = [];
+    planBackupRef.current = [];
     runningRef.current = false;
   }, []);
 
@@ -68,6 +66,7 @@ export function useWorkflow({ caseId, markRunStart, markRunCompleted, handleRepo
         step: idx + 1,
         name: step.text,
         mcp: prevPlan[idx]?.mcp || recommendMcpForStrategyStep(step.text),
+        edgeLabel: prevPlan[idx]?.edgeLabel ?? null,
       })),
     []
   );

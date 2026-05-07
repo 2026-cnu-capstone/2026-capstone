@@ -1,55 +1,61 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DEFAULT_CASES } from '@/lib/constants';
-import { nextCaseId } from '@/lib/utils';
+import { api } from '@/lib/api';
 import type { ActiveCase, Case } from '@/types';
 
-const STORAGE_KEY = 'forensic_cases';
-
-function loadCases(): Case[] {
-  if (typeof window === 'undefined') return DEFAULT_CASES;
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as Case[]) : DEFAULT_CASES;
-  } catch {
-    return DEFAULT_CASES;
-  }
+function coerceCase(raw: Record<string, unknown>): Case {
+  return {
+    id: String(raw.id ?? ''),
+    title: String(raw.title ?? raw.name ?? ''),
+    status: (raw.status as Case['status']) ?? 'idle',
+    analyst: String(raw.analyst ?? '-'),
+    media: String(raw.media ?? '-'),
+    size: String(raw.size ?? '-'),
+    date: String(raw.date ?? new Date().toISOString().slice(0, 10)),
+    progress: typeof raw.progress === 'number' ? raw.progress : 0,
+  };
 }
 
 export function useCases() {
-  const [cases, setCases] = useState<Case[]>(loadCases);
-  const [activeCase, setActiveCase] = useState<ActiveCase>({
-    id: 'DF-2026-0425',
-    title: '20260425_김영끌_랜섬웨어',
-  });
+  const [cases, setCases] = useState<Case[]>([]);
+  const [activeCase, setActiveCase] = useState<ActiveCase>({ id: '', title: '케이스 없음' });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cases));
-    } catch {
-      // ignore quota / private mode errors
-    }
-  }, [cases]);
+    let cancelled = false;
+    api.getCases()
+      .then(rows => {
+        if (cancelled) return;
+        setCases(rows.map(coerceCase));
+      })
+      .catch(e => {
+        console.error('getCases failed:', e);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  const createCase = useCallback((title: string) => {
+  const createCase = useCallback(async (title: string) => {
     const trimmed = title.trim();
     if (!trimmed) return null;
-    const id = nextCaseId(cases);
-    const today = new Date().toISOString().slice(0, 10);
-    const created: Case = {
-      id,
-      title: trimmed,
-      status: 'idle',
-      analyst: '-',
-      media: '-',
-      size: '-',
-      date: today,
-      progress: 0,
-    };
-    setCases(prev => [created, ...prev]);
-    return created;
-  }, [cases]);
+    try {
+      const created = await api.createCase({ name: trimmed });
+      const normalized = coerceCase(created);
+      setCases(prev => [normalized, ...prev]);
+      return normalized;
+    } catch (e) {
+      console.error('createCase failed:', e);
+      return null;
+    }
+  }, []);
 
-  const deleteCase = useCallback((id: string) => {
+  const deleteCase = useCallback(async (id: string) => {
+    try {
+      await api.deleteCase(id);
+    } catch (e) {
+      console.error('deleteCase failed:', e);
+    }
     setCases(prev => {
       const remaining = prev.filter(c => c.id !== id);
       setActiveCase(ac =>
@@ -63,5 +69,5 @@ export function useCases() {
     });
   }, []);
 
-  return { cases, setCases, activeCase, setActiveCase, createCase, deleteCase };
+  return { cases, setCases, activeCase, setActiveCase, createCase, deleteCase, loading };
 }

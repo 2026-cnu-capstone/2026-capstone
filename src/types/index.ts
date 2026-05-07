@@ -36,6 +36,7 @@ export interface PlanStep {
   step: number;
   name: string;
   mcp: string;
+  edgeLabel?: string | null;
 }
 
 export interface StrategyStep {
@@ -52,18 +53,6 @@ export interface McpTool {
 export interface McpCategory {
   category: string;
   tools: McpTool[];
-}
-
-export interface IORow {
-  name: string;
-  type: string;
-  note?: string;
-}
-
-export interface NodeIO {
-  input: IORow[];
-  output: IORow[];
-  edgeLabel: string | null;
 }
 
 export interface DfxmlNode {
