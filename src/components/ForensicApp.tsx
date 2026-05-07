@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { ChevronRight, Play, Pause, Plus } from 'lucide-react';
 
@@ -14,10 +14,11 @@ import EdgeModal from './modals/EdgeModal';
 import ReportViewerModal from './modals/ReportViewerModal';
 
 import {
-  detectDiskImageFormat, getBasename, recommendMcpForStrategyStep, nextCaseId,
+  detectDiskImageFormat, recommendMcpForStrategyStep, nextCaseId,
 } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { useAnalysisWebSocket, WsEvent } from '@/hooks/useAnalysisWebSocket';
+import { useSplitter } from '@/hooks/useSplitter';
 import { DEFAULT_STRATEGY_STEPS, DEFAULT_PLAN } from '@/lib/constants';
 import type {
   WorkflowState, ReportState, Case, ActiveCase, PlanStep, StrategyStep,
@@ -32,8 +33,7 @@ export default function ForensicApp() {
   const [attachedFile, setAttachedFile] = useState<{ name: string } | null>(null);
   const [pathStepDone, setPathStepDone] = useState(false);
   const [workflowState, setWorkflowState] = useState<WorkflowState>('idle');
-  const [panelWidth, setPanelWidth] = useState(380);
-  const isDraggingSplitterRef = useRef(false);
+  const { width: panelWidth, startDragging: startSplitterDrag } = useSplitter();
 
   const rejectionReasonRef = useRef('');
   const strategyEditReasonRef = useRef('');
@@ -90,28 +90,6 @@ export default function ForensicApp() {
   const [caseAnalystFilter, setCaseAnalystFilter] = useState('all');
   const [caseSort, setCaseSort] = useState<CaseSort>('dateDesc');
   const [caseFilterMenu, setCaseFilterMenu] = useState<string | null>(null);
-
-  // Splitter drag
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDraggingSplitterRef.current) {
-        const newWidth = window.innerWidth - e.clientX;
-        setPanelWidth(Math.max(280, Math.min(newWidth, 800)));
-      }
-    };
-    const handleMouseUp = () => {
-      if (isDraggingSplitterRef.current) {
-        isDraggingSplitterRef.current = false;
-        document.body.style.cursor = 'default';
-      }
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
 
   const diskImageCheck = detectDiskImageFormat(diskImagePath);
   const diskImageReady = diskImageCheck.ok;
@@ -541,11 +519,7 @@ export default function ForensicApp() {
             {/* Splitter */}
             <div
               className="w-[3px] bg-f-border hover:bg-f-accent cursor-col-resize shrink-0 z-10 transition-colors"
-              onMouseDown={e => {
-                e.preventDefault();
-                isDraggingSplitterRef.current = true;
-                document.body.style.cursor = 'col-resize';
-              }}
+              onMouseDown={startSplitterDrag}
             />
 
             {/* Analysis panel */}
