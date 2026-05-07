@@ -8,7 +8,9 @@ import {
 import type {
   WorkflowState, ReportState, PlanStep, StrategyStep, RejectionRecord,
 } from '@/types';
-import { getDiskImageMetaRows, getBasename } from '@/lib/utils';
+import { getBasename } from '@/lib/utils';
+import PulseLoader from './common/PulseLoader';
+import MetaBlock from './common/MetaBlock';
 
 interface Props {
   workflowState: WorkflowState;
@@ -66,37 +68,6 @@ const MCP_PLAN_HIDDEN_STATES: WorkflowState[] = [
   'idle', 'plan_thinking', 'strategy_review', 'strategy_edit_request',
   'strategy_editing', 'mcp_plan_thinking',
 ];
-
-function PulseLoader({ label }: { label: string }) {
-  return (
-    <div className="bg-f-surface border border-f-border border-l-[3px] border-l-f-purple rounded-r-md p-3 flex items-center gap-2">
-      <div className="flex gap-1">
-        {[0, 1, 2].map(i => (
-          <div key={i} className={`w-1.5 h-1.5 rounded-full bg-f-purple ${i === 0 ? 'animate-pulse2' : i === 1 ? 'animate-pulse2d' : 'animate-pulse2e'}`} />
-        ))}
-      </div>
-      <span className="text-xs text-f-t3">{label}</span>
-    </div>
-  );
-}
-
-function MetaBlock({ path, check }: { path: string; check: { ok: boolean; format: string } }) {
-  const rows = getDiskImageMetaRows(path, check);
-  if (!rows.length) return null;
-  return (
-    <div className="mt-2.5 bg-f-surface border border-f-border rounded-md px-3 py-2.5">
-      <div className="text-[9px] font-bold tracking-widest uppercase text-f-t4 mb-2">디스크 이미지 메타데이터</div>
-      <dl className="flex flex-col gap-1.5">
-        {rows.map(({ label, value }) => (
-          <div key={label} className="grid gap-2 text-[11px] items-start" style={{ gridTemplateColumns: '118px 1fr' }}>
-            <dt className="text-f-t4 font-medium">{label}</dt>
-            <dd className="text-f-t2 leading-snug break-words" title={value}>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
 
 export default function AnalysisPanel({
   workflowState, diskImagePath, diskImageReady, diskImageCheck, pathStepDone,
