@@ -52,6 +52,8 @@ interface Props {
   onApproveReport: () => void;
   onOpenMcpModal: (idx: number) => void;
   onEvidenceFilePick: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  taskResults?: Array<{ task_id?: string; agent_name?: string; status?: string; output?: string }>;
+  elapsedTime?: string;
 }
 
 const PROMPT_VISIBLE_STATES: WorkflowState[] = [
@@ -104,7 +106,7 @@ export default function AnalysisPanel({
   onIntakeSubmit, onApproveStrategy, onStrategyEditRequest, onStrategyEditCancel,
   onStrategyEditSubmit, onSyncPlanWithStrategy, onStrategyDirectEdit, onApprovePlan, onRejectPlan,
   onStartEdit, onCancelEdit, onSubmitEdit, onCancelReject, onRerequest, onApproveReport,
-  onOpenMcpModal, onEvidenceFilePick,
+  onOpenMcpModal, onEvidenceFilePick, taskResults, elapsedTime,
 }: Props) {
   const evidenceFileInputRef = useRef<HTMLInputElement>(null);
   const evidenceName = getBasename(diskImagePath) || attachedFile?.name || '증거물';
@@ -584,7 +586,7 @@ export default function AnalysisPanel({
                         <FileText size={13} className="text-sky-300" /> 분석 완료 — 결과 요약
                       </span>
                       <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                        <Clock size={10} /> 4분 12초
+                        <Clock size={10} /> {elapsedTime || '-'}
                       </div>
                     </div>
 
@@ -597,24 +599,46 @@ export default function AnalysisPanel({
                         </div>
                       </div>
 
-                      {/* 주요 발견 사항 */}
+                      {/* 분석 결과 요약 */}
                       <div>
-                        <div className="text-[9px] font-bold tracking-widest uppercase text-f-t4 mb-1.5">주요 발견 사항</div>
-                        <div className="flex flex-col gap-1.5">
-                          {[
-                            { flag: '복구', label: '삭제 .hwp 12건 복구', sub: 'report_Q1.hwp 外 · 비할당 영역 카빙', color: 'border-f-success', badge: 'text-f-success bg-green-50' },
-                            { flag: '주의', label: '타임스탬프 변조 의심 2건', sub: '$STANDARD_INFORMATION ↔ $FILE_NAME 불일치', color: 'border-f-danger', badge: 'text-f-danger bg-red-50' },
-                            { flag: '정상', label: 'MFT 1,247건 파싱 · 무결성 통과', sub: 'SHA-256 해시 일치 확인', color: 'border-f-accent', badge: 'text-f-accent bg-blue-50' },
-                          ].map(item => (
-                            <div key={item.label} className={`bg-f-surface border border-f-border rounded px-2.5 py-1.5 border-l-[3px] ${item.color}`}>
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className={`text-[9px] font-bold px-1 py-[1px] rounded ${item.badge}`}>{item.flag}</span>
-                                <span className="text-[11px] font-medium text-f-t1">{item.label}</span>
-                              </div>
-                              <div className="text-[10px] text-f-t3">{item.sub}</div>
+                        <div className="text-[9px] font-bold tracking-widest uppercase text-f-t4 mb-1.5">분석 결과 요약</div>
+                        {taskResults && taskResults.length > 0 ? (() => {
+                          const successCount = taskResults.filter(r => r.status === 'success').length;
+                          const errorCount = taskResults.filter(r => r.status === 'error').length;
+                          const items = [
+                            {
+                              flag: successCount > 0 ? '완료' : '정상',
+                              label: successCount > 0 ? `${successCount}개 단계 성공` : '분석 완료',
+                              sub: `총 ${taskResults.length}개 단계 실행`,
+                              color: 'border-f-success',
+                              badge: 'text-f-success bg-green-50',
+                            },
+                            ...(errorCount > 0 ? [{
+                              flag: '오류',
+                              label: `${errorCount}개 단계 오류`,
+                              sub: '보고서에서 상세 내용을 확인하세요',
+                              color: 'border-f-danger',
+                              badge: 'text-f-danger bg-red-50',
+                            }] : []),
+                          ];
+                          return (
+                            <div className="flex flex-col gap-1.5">
+                              {items.map(item => (
+                                <div key={item.flag} className={`bg-f-surface border border-f-border rounded px-2.5 py-1.5 border-l-[3px] ${item.color}`}>
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className={`text-[9px] font-bold px-1 py-[1px] rounded ${item.badge}`}>{item.flag}</span>
+                                    <span className="text-[11px] font-medium text-f-t1">{item.label}</span>
+                                  </div>
+                                  <div className="text-[10px] text-f-t3">{item.sub}</div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })() : (
+                          <div className="text-[11px] text-f-t3 bg-f-surface2 border border-f-border rounded px-2.5 py-2">
+                            분석이 완료되었습니다. 아래에서 보고서를 생성하세요.
+                          </div>
+                        )}
                       </div>
 
                       {/* 분석 단계별 결과 */}
@@ -632,10 +656,10 @@ export default function AnalysisPanel({
                                   <span className="text-[9px] font-mono text-f-accent bg-blue-50 px-1 py-[1px] rounded">{item.mcp}</span>
                                 </div>
                                 <span className="text-[10px] text-f-t3">
-                                  {i === 0 && '파티션 맵 추출 · MFT 1,247건 파싱'}
-                                  {i === 1 && '비할당 영역 카빙 · .hwp 12건 복구'}
-                                  {i === 2 && 'EXIF 추출 · 변조 의심 2건 플래그'}
-                                  {i > 2 && '실행 완료'}
+                                  {(() => {
+                                    const out = taskResults?.[i]?.output;
+                                    return out ? (out.length > 80 ? out.slice(0, 80) + '…' : out) : '실행 완료';
+                                  })()}
                                 </span>
                               </div>
                             </div>
@@ -648,10 +672,10 @@ export default function AnalysisPanel({
                         <div className="text-[9px] font-bold tracking-widest uppercase text-f-t4 mb-1.5">분석 환경</div>
                         <div className="grid grid-cols-2 gap-1">
                           {[
-                            ['증거물', 'USB_image.E01 (2.3 GB)'],
-                            ['파일시스템', 'NTFS'],
-                            ['SHA-256', 'a3f2...8b91 ✓'],
-                            ['도구', editablePlan.length + '개 MCP'],
+                            ['증거물', getBasename(diskImagePath) || '(미지정)'],
+                            ['컨테이너 포맷', (diskImageCheck.format || '-').toUpperCase()],
+                            ['분석 단계', `${editablePlan.length}개 단계`],
+                            ['MCP 서버', `${editablePlan.length}개 도구`],
                           ].map(([k, v]) => (
                             <div key={k} className="bg-f-surface2 border border-f-border rounded px-2 py-1.5">
                               <div className="text-[9px] text-f-t4 mb-0.5">{k}</div>

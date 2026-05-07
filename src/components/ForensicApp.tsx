@@ -40,6 +40,7 @@ export default function ForensicApp() {
   const strategyBackupRef = useRef<StrategyStep[]>(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
   const planBackupRef = useRef<PlanStep[]>(DEFAULT_PLAN.map(p => ({ ...p })));
   const runningRef = useRef(false);
+  const runStartTimeRef = useRef<number | null>(null);
 
   const [rejectionHistory, setRejectionHistory] = useState<RejectionRecord[]>([]);
   const [rejectedPlanSnapshot, setRejectedPlanSnapshot] = useState<PlanStep[] | null>(null);
@@ -48,6 +49,7 @@ export default function ForensicApp() {
   const [chatInputText, setChatInputText] = useState('');
   const [submittedPrompt, setSubmittedPrompt] = useState('');
   const [reportState, setReportState] = useState<ReportState>('idle');
+  const [elapsedTime, setElapsedTime] = useState('');
   const [showReportViewer, setShowReportViewer] = useState(false);
   const [reportData, setReportData] = useState<{ summary: string; report: string; dfxml: string } | null>(null);
   const [taskResults, setTaskResults] = useState<Array<{ task_id?: string; agent_name?: string; status?: string; output?: string }>>([]);
@@ -129,6 +131,7 @@ export default function ForensicApp() {
     setChatInputText('');
     setSubmittedPrompt('');
     setReportState('idle');
+    setElapsedTime('');
     setShowReportViewer(false);
     setEditablePlan(DEFAULT_PLAN.map(p => ({ ...p })));
     setStrategySteps(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
@@ -292,6 +295,12 @@ export default function ForensicApp() {
         setActiveStep(-1);
         setWorkflowState('done');
         runningRef.current = false;
+        if (runStartTimeRef.current) {
+          const ms = Date.now() - runStartTimeRef.current;
+          const s = Math.round(ms / 1000);
+          setElapsedTime(s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${s % 60}초`);
+          runStartTimeRef.current = null;
+        }
         if ('task_results' in event) {
           setTaskResults(event.task_results as any[]);
         }
@@ -316,6 +325,7 @@ export default function ForensicApp() {
   const handleRunWorkflow = useCallback(async () => {
     if (workflowState !== 'approved') return;
     runningRef.current = true;
+    runStartTimeRef.current = Date.now();
     setWorkflowState('running');
     try {
       await api.executeAnalysis(activeCase.id);
@@ -555,6 +565,8 @@ export default function ForensicApp() {
                 onRerequest={handleRerequest}
                 onApproveReport={handleApproveReport}
                 onOpenMcpModal={openMcpModal}
+                taskResults={taskResults}
+                elapsedTime={elapsedTime}
                 onEvidenceFilePick={e => {
                   const file = e.target.files?.[0];
                   if (file) setAttachedFile({ name: file.name });
