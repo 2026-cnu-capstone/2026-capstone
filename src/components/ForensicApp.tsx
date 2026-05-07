@@ -20,9 +20,10 @@ import { api } from '@/lib/api';
 import { useAnalysisWebSocket, WsEvent } from '@/hooks/useAnalysisWebSocket';
 import { useSplitter } from '@/hooks/useSplitter';
 import { useCases } from '@/hooks/useCases';
+import { useReportRun } from '@/hooks/useReportRun';
 import { DEFAULT_STRATEGY_STEPS, DEFAULT_PLAN } from '@/lib/constants';
 import type {
-  WorkflowState, ReportState, ActiveCase, PlanStep, StrategyStep,
+  WorkflowState, ActiveCase, PlanStep, StrategyStep,
   RejectionRecord, SelectedEdge, McpModalState, CaseSort,
 } from '@/types';
 
@@ -41,7 +42,6 @@ export default function ForensicApp() {
   const strategyBackupRef = useRef<StrategyStep[]>(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
   const planBackupRef = useRef<PlanStep[]>(DEFAULT_PLAN.map(p => ({ ...p })));
   const runningRef = useRef(false);
-  const runStartTimeRef = useRef<number | null>(null);
 
   const [rejectionHistory, setRejectionHistory] = useState<RejectionRecord[]>([]);
   const [rejectedPlanSnapshot, setRejectedPlanSnapshot] = useState<PlanStep[] | null>(null);
@@ -49,11 +49,13 @@ export default function ForensicApp() {
   const [strategySteps, setStrategySteps] = useState<StrategyStep[]>(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
   const [chatInputText, setChatInputText] = useState('');
   const [submittedPrompt, setSubmittedPrompt] = useState('');
-  const [reportState, setReportState] = useState<ReportState>('idle');
-  const [elapsedTime, setElapsedTime] = useState('');
-  const [showReportViewer, setShowReportViewer] = useState(false);
-  const [reportData, setReportData] = useState<{ summary: string; report: string; dfxml: string } | null>(null);
-  const [taskResults, setTaskResults] = useState<Array<{ task_id?: string; agent_name?: string; status?: string; output?: string }>>([]);
+  const reportRun = useReportRun();
+  const {
+    reportState, reportData, taskResults, elapsedTime,
+    showReportViewer, setShowReportViewer,
+    markRunStart, markRunCompleted, handleReportReady,
+    approveReport, downloadReport, reset: resetReportRun,
+  } = reportRun;
   const [nodeDfxmlFragments, setNodeDfxmlFragments] = useState<Record<number, string>>({});
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge | null>(null);
@@ -90,9 +92,7 @@ export default function ForensicApp() {
     setPlanRound(1);
     setChatInputText('');
     setSubmittedPrompt('');
-    setReportState('idle');
-    setElapsedTime('');
-    setShowReportViewer(false);
+    resetReportRun();
     setEditablePlan(DEFAULT_PLAN.map(p => ({ ...p })));
     setStrategySteps(DEFAULT_STRATEGY_STEPS.map(s => ({ ...s })));
     setSelectedNode(null);
@@ -181,45 +181,11 @@ export default function ForensicApp() {
     }
   }, [activeCase.id]);
 
-  const handleApproveReport = useCallback(async () => {
-    setReportState('generating');
-    try {
-      await api.generateReport(activeCase.id);
-      setReportState('done');
-    } catch (e) {
-      console.error('generateReport failed:', e);
-      setReportState('idle');
-    }
-  }, [activeCase.id]);
-
-  const handleDownloadReport = useCallback(() => {
-    const lines = [
-      '디지털 포렌식 분석 보고서',
-      '='.repeat(50),
-      `생성일: ${new Date().toISOString().slice(0, 10)}`,
-      `케이스: ${activeCase.id} — ${activeCase.title}`,
-      '',
-      '1. 사건 개요',
-      '-'.repeat(30),
-      submittedPrompt || '(없음)',
-      '',
-    ];
-    if (reportData?.summary) {
-      lines.push('2. 분석 요약', '-'.repeat(30), reportData.summary, '');
-    }
-    if (reportData?.report) {
-      lines.push(`${reportData?.summary ? '3' : '2'}. 상세 보고서`, '-'.repeat(30), reportData.report);
-    }
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeCase.id}_forensic_report.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [reportData, activeCase, submittedPrompt]);
+  const handleApproveReport = useCallback(() => approveReport(activeCase.id), [approveReport, activeCase.id]);
+  const handleDownloadReport = useCallback(
+    () => downloadReport(activeCase, submittedPrompt),
+    [downloadReport, activeCase, submittedPrompt]
+  );
 
   const handleApprovePlan = useCallback(async () => {
     try {
@@ -280,27 +246,18 @@ export default function ForensicApp() {
         setActiveStep(-1);
         setWorkflowState('done');
         runningRef.current = false;
-        if (runStartTimeRef.current) {
-          const ms = Date.now() - runStartTimeRef.current;
-          const s = Math.round(ms / 1000);
-          setElapsedTime(s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${s % 60}초`);
-          runStartTimeRef.current = null;
-        }
-        if ('task_results' in event) {
-          setTaskResults(event.task_results as any[]);
-        }
+        markRunCompleted('task_results' in event ? (event.task_results as any[]) : undefined);
         break;
       case 'report_ready':
-        setReportState('done');
         if ('summary' in event) {
-          setReportData({ summary: event.summary, report: event.report, dfxml: event.dfxml });
+          handleReportReady({ summary: event.summary, report: event.report, dfxml: event.dfxml });
         }
         break;
       case 'error':
         console.error('WS error:', (event as any).message);
         break;
     }
-  }, []);
+  }, [markRunCompleted, handleReportReady]);
 
   useAnalysisWebSocket({
     caseId: activeCase.id || null,
@@ -310,7 +267,7 @@ export default function ForensicApp() {
   const handleRunWorkflow = useCallback(async () => {
     if (workflowState !== 'approved') return;
     runningRef.current = true;
-    runStartTimeRef.current = Date.now();
+    markRunStart();
     setWorkflowState('running');
     try {
       await api.executeAnalysis(activeCase.id);
@@ -320,7 +277,7 @@ export default function ForensicApp() {
       setWorkflowState('approved');
       setActiveStep(-1);
     }
-  }, [workflowState, activeCase.id]);
+  }, [workflowState, activeCase.id, markRunStart]);
 
   const handlePauseWorkflow = useCallback(async () => {
     runningRef.current = false;
