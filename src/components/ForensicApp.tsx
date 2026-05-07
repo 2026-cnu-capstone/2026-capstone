@@ -19,6 +19,7 @@ import { useSplitter } from '@/hooks/useSplitter';
 import { useCases } from '@/hooks/useCases';
 import { useReportRun } from '@/hooks/useReportRun';
 import { useWorkflow } from '@/hooks/useWorkflow';
+import { WorkflowProvider, type WorkflowContextValue } from '@/contexts/WorkflowContext';
 import type {
   ActiveCase, SelectedEdge, McpModalState, CaseSort,
 } from '@/types';
@@ -137,6 +138,57 @@ export default function ForensicApp() {
   }, [workflow]);
 
   const isCanvasVisible = ['approved', 'running', 'done'].includes(workflow.workflowState);
+
+  const workflowContextValue: WorkflowContextValue = {
+    workflowState: workflow.workflowState,
+    diskImagePath,
+    setDiskImagePath,
+    diskImageCheck,
+    diskImageReady,
+    pathStepDone,
+    setPathStepDone,
+    attachedFile,
+    chatInputText,
+    setChatInputText,
+    submittedPrompt,
+    strategySteps: workflow.strategySteps,
+    setStrategySteps: workflow.setStrategySteps,
+    showReasoning,
+    setShowReasoning,
+    strategyBackupRef: workflow.strategyBackupRef,
+    strategyEditReasonRef: workflow.strategyEditReasonRef,
+    editablePlan: workflow.editablePlan,
+    setEditablePlan: workflow.setEditablePlan,
+    planRound: workflow.planRound,
+    rejectionHistory: workflow.rejectionHistory,
+    rejectionReasonRef: workflow.rejectionReasonRef,
+    reportState: reportRun.reportState,
+    taskResults: reportRun.taskResults,
+    elapsedTime: reportRun.elapsedTime,
+    setShowReportViewer: reportRun.setShowReportViewer,
+    onIntakeSubmit: handleIntakeSubmit,
+    onApproveStrategy: workflow.approveStrategy,
+    onStrategyEditRequest: workflow.requestStrategyEdit,
+    onStrategyEditCancel: workflow.cancelStrategyEdit,
+    onStrategyEditSubmit: handleStrategyEditSubmit,
+    onSyncPlanWithStrategy: workflow.syncPlanWithStrategy,
+    onStrategyDirectEdit: workflow.startStrategyDirectEdit,
+    onApprovePlan: workflow.approvePlan,
+    onRejectPlan: workflow.rejectPlan,
+    onStartEdit: workflow.startPlanEdit,
+    onCancelEdit: workflow.cancelPlanEdit,
+    onSubmitEdit: workflow.submitPlanEdit,
+    onCancelReject: workflow.cancelReject,
+    onRerequest: workflow.rerequest,
+    onApproveReport: handleApproveReport,
+    onOpenMcpModal: openMcpModal,
+    onDownloadReport: handleDownloadReport,
+    onEvidenceFilePick: e => {
+      const file = e.target.files?.[0];
+      if (file) setAttachedFile({ name: file.name });
+      e.target.value = '';
+    },
+  };
 
   return (
     <div className="flex h-screen w-screen bg-f-bg text-f-t1 overflow-hidden font-sans text-[13px]">
@@ -277,56 +329,9 @@ export default function ForensicApp() {
               className="border-l border-f-border flex flex-col min-h-0 shrink-0"
               style={{ width: panelWidth }}
             >
-              <AnalysisPanel
-                workflowState={workflow.workflowState}
-                diskImagePath={diskImagePath}
-                diskImageReady={diskImageReady}
-                diskImageCheck={diskImageCheck}
-                pathStepDone={pathStepDone}
-                setPathStepDone={setPathStepDone}
-                setDiskImagePath={setDiskImagePath}
-                attachedFile={attachedFile}
-                chatInputText={chatInputText}
-                setChatInputText={setChatInputText}
-                submittedPrompt={submittedPrompt}
-                strategySteps={workflow.strategySteps}
-                setStrategySteps={workflow.setStrategySteps}
-                editablePlan={workflow.editablePlan}
-                setEditablePlan={workflow.setEditablePlan}
-                planRound={workflow.planRound}
-                rejectionHistory={workflow.rejectionHistory}
-                showReasoning={showReasoning}
-                setShowReasoning={setShowReasoning}
-                reportState={reportRun.reportState}
-                setShowReportViewer={reportRun.setShowReportViewer}
-                rejectionReasonRef={workflow.rejectionReasonRef}
-                strategyEditReasonRef={workflow.strategyEditReasonRef}
-                strategyBackupRef={workflow.strategyBackupRef}
-                onIntakeSubmit={handleIntakeSubmit}
-                onApproveStrategy={workflow.approveStrategy}
-                onStrategyEditRequest={workflow.requestStrategyEdit}
-                onStrategyEditCancel={workflow.cancelStrategyEdit}
-                onStrategyEditSubmit={handleStrategyEditSubmit}
-                onSyncPlanWithStrategy={workflow.syncPlanWithStrategy}
-                onStrategyDirectEdit={workflow.startStrategyDirectEdit}
-                onApprovePlan={workflow.approvePlan}
-                onRejectPlan={workflow.rejectPlan}
-                onStartEdit={workflow.startPlanEdit}
-                onCancelEdit={workflow.cancelPlanEdit}
-                onSubmitEdit={workflow.submitPlanEdit}
-                onCancelReject={workflow.cancelReject}
-                onRerequest={workflow.rerequest}
-                onApproveReport={handleApproveReport}
-                onOpenMcpModal={openMcpModal}
-                taskResults={reportRun.taskResults}
-                elapsedTime={reportRun.elapsedTime}
-                onDownloadReport={handleDownloadReport}
-                onEvidenceFilePick={e => {
-                  const file = e.target.files?.[0];
-                  if (file) setAttachedFile({ name: file.name });
-                  e.target.value = '';
-                }}
-              />
+              <WorkflowProvider value={workflowContextValue}>
+                <AnalysisPanel />
+              </WorkflowProvider>
             </div>
           </div>
         )}
