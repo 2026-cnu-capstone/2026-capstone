@@ -14,14 +14,15 @@ import EdgeModal from './modals/EdgeModal';
 import ReportViewerModal from './modals/ReportViewerModal';
 
 import {
-  detectDiskImageFormat, recommendMcpForStrategyStep, nextCaseId,
+  detectDiskImageFormat, recommendMcpForStrategyStep,
 } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { useAnalysisWebSocket, WsEvent } from '@/hooks/useAnalysisWebSocket';
 import { useSplitter } from '@/hooks/useSplitter';
+import { useCases } from '@/hooks/useCases';
 import { DEFAULT_STRATEGY_STEPS, DEFAULT_PLAN } from '@/lib/constants';
 import type {
-  WorkflowState, ReportState, Case, ActiveCase, PlanStep, StrategyStep,
+  WorkflowState, ReportState, ActiveCase, PlanStep, StrategyStep,
   RejectionRecord, SelectedEdge, McpModalState, CaseSort,
 } from '@/types';
 
@@ -63,26 +64,7 @@ export default function ForensicApp() {
   const [mcpModal, setMcpModal] = useState<McpModalState>({ open: false, stepIdx: null });
   const [mcpSearch, setMcpSearch] = useState('');
 
-  const DEFAULT_CASES: Case[] = [
-    { id: 'DF-2026-0425', title: '20260425_김영끌_랜섬웨어', status: 'running', analyst: '김영끌', media: 'NTFS', size: '50GB', date: '2026-04-25', progress: 45 },
-    { id: 'DF-2023-0820', title: 'USB 저장매체 삭제파일 복구', status: 'done', analyst: '이포렌', media: 'NTFS', size: '2.3GB', date: '2023-08-20', progress: 100 },
-    { id: 'DF-2023-0901', title: '이메일 피싱 계정 추적', status: 'idle', analyst: '박디지', media: 'Archive', size: '1.2GB', date: '2023-09-01', progress: 0 },
-    { id: 'DF-2023-0910', title: '사내 기밀 유출 타임라인 분석', status: 'failed', analyst: '김수사', media: 'APFS', size: '256GB', date: '2023-09-10', progress: 12 },
-  ];
-
-  const [cases, setCases] = useState<Case[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_CASES;
-    try {
-      const saved = localStorage.getItem('forensic_cases');
-      return saved ? JSON.parse(saved) : DEFAULT_CASES;
-    } catch { return DEFAULT_CASES; }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('forensic_cases', JSON.stringify(cases));
-  }, [cases]);
-
-  const [activeCase, setActiveCase] = useState<ActiveCase>({ id: 'DF-2026-0425', title: '20260425_김영끌_랜섬웨어' });
+  const { cases, activeCase, setActiveCase, createCase, deleteCase } = useCases();
   const [newCaseModalOpen, setNewCaseModalOpen] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState('');
   const [caseSearchQuery, setCaseSearchQuery] = useState('');
@@ -118,14 +100,10 @@ export default function ForensicApp() {
   }, []);
 
   const handleCreateNewCase = useCallback(() => {
-    const title = newCaseTitle.trim();
-    if (!title) return;
-    const id = nextCaseId(cases);
-    const today = new Date().toISOString().slice(0, 10);
-    setCases(prev => [{ id, title, status: 'idle', analyst: '-', media: '-', size: '-', date: today, progress: 0 }, ...prev]);
+    if (!createCase(newCaseTitle)) return;
     setNewCaseModalOpen(false);
     setNewCaseTitle('');
-  }, [cases, newCaseTitle]);
+  }, [createCase, newCaseTitle]);
 
   const buildPlanFromStrategySteps = useCallback((steps: StrategyStep[], prevPlan: PlanStep[] = []) =>
     steps.map((step, idx) => ({
@@ -371,14 +349,9 @@ export default function ForensicApp() {
 
   const handleDeleteCase = useCallback(() => {
     if (!confirmDeleteId) return;
-    const id = confirmDeleteId;
-    setCases(prev => {
-      const remaining = prev.filter(c => c.id !== id);
-      setActiveCase(ac => ac.id !== id ? ac : (remaining[0] ? { id: remaining[0].id, title: remaining[0].title } : { id: '', title: '케이스 없음' }));
-      return remaining;
-    });
+    deleteCase(confirmDeleteId);
     setConfirmDeleteId(null);
-  }, [confirmDeleteId]);
+  }, [confirmDeleteId, deleteCase]);
 
   const isCanvasVisible = ['approved', 'running', 'done'].includes(workflowState);
 
