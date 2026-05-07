@@ -160,11 +160,11 @@ export default function CaseListView({
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="bg-f-surface border-b border-f-border sticky top-0 z-10">
-              {['케이스 ID', '제목', '분석관', '생성일', ''].map((h, i) => (
+              {['케이스 ID', '제목', '상태', '분석관', '생성일', ''].map((h, i) => (
                 <th
                   key={i}
                   className="h-[34px] px-3.5 text-[10px] font-semibold text-f-t4 tracking-wider uppercase whitespace-nowrap"
-                  style={{ width: i === 0 ? 148 : i === 2 ? 88 : i === 3 ? 100 : i === 4 ? 44 : 'auto' }}
+                  style={{ width: i === 0 ? 148 : i === 2 ? 90 : i === 3 ? 88 : i === 4 ? 100 : i === 5 ? 44 : 'auto' }}
                 >
                   {h}
                 </th>
@@ -174,7 +174,7 @@ export default function CaseListView({
           <tbody>
             {filteredCases.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-9 px-3.5 text-center text-sm text-f-t4">
+                <td colSpan={6} className="py-9 px-3.5 text-center text-sm text-f-t4">
                   검색·필터 조건에 맞는 케이스가 없습니다.
                 </td>
               </tr>
@@ -187,6 +187,18 @@ export default function CaseListView({
                 >
                   <td className="px-3.5 font-mono text-[11px] text-f-accent font-medium">{c.id}</td>
                   <td className="px-3.5 text-[13px] text-f-t1 max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">{c.title}</td>
+                  <td className="px-3.5">
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`text-[11px] font-medium ${STATUS_COLOR[c.status]}`}>
+                        {STATUS_LABEL[c.status]}
+                      </span>
+                      {c.status === 'running' && c.progress > 0 && (
+                        <div className="w-14 h-[3px] bg-f-border rounded-full overflow-hidden">
+                          <div className="h-full bg-f-accent rounded-full" style={{ width: `${c.progress}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3.5 text-xs text-f-t3">{c.analyst}</td>
                   <td className="px-3.5 text-xs text-f-t4">{c.date}</td>
                   <td className="px-2">
