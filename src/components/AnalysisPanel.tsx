@@ -54,6 +54,7 @@ interface Props {
   onEvidenceFilePick: (e: React.ChangeEvent<HTMLInputElement>) => void;
   taskResults?: Array<{ task_id?: string; agent_name?: string; status?: string; output?: string }>;
   elapsedTime?: string;
+  onDownloadReport?: () => void;
 }
 
 const PROMPT_VISIBLE_STATES: WorkflowState[] = [
@@ -106,7 +107,7 @@ export default function AnalysisPanel({
   onIntakeSubmit, onApproveStrategy, onStrategyEditRequest, onStrategyEditCancel,
   onStrategyEditSubmit, onSyncPlanWithStrategy, onStrategyDirectEdit, onApprovePlan, onRejectPlan,
   onStartEdit, onCancelEdit, onSubmitEdit, onCancelReject, onRerequest, onApproveReport,
-  onOpenMcpModal, onEvidenceFilePick, taskResults, elapsedTime,
+  onOpenMcpModal, onEvidenceFilePick, taskResults, elapsedTime, onDownloadReport,
 }: Props) {
   const evidenceFileInputRef = useRef<HTMLInputElement>(null);
   const evidenceName = getBasename(diskImagePath) || attachedFile?.name || '증거물';
@@ -733,7 +734,11 @@ export default function AnalysisPanel({
                         >
                           <FileSearch size={12} /> 결과 요약보기
                         </button>
-                        <button className="flex-1 h-[30px] bg-f-accent border-none rounded text-white text-[11px] font-medium cursor-pointer flex items-center justify-center gap-1 hover:bg-blue-700 transition-colors">
+                        <button
+                          onClick={onDownloadReport}
+                          disabled={!onDownloadReport}
+                          className="flex-1 h-[30px] bg-f-accent border-none rounded text-white text-[11px] font-medium cursor-pointer flex items-center justify-center gap-1 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-default"
+                        >
                           <Download size={12} /> 보고서 다운로드
                         </button>
                       </div>

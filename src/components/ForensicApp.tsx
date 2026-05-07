@@ -236,6 +236,35 @@ export default function ForensicApp() {
     }
   }, [activeCase.id]);
 
+  const handleDownloadReport = useCallback(() => {
+    const lines = [
+      '디지털 포렌식 분석 보고서',
+      '='.repeat(50),
+      `생성일: ${new Date().toISOString().slice(0, 10)}`,
+      `케이스: ${activeCase.id} — ${activeCase.title}`,
+      '',
+      '1. 사건 개요',
+      '-'.repeat(30),
+      submittedPrompt || '(없음)',
+      '',
+    ];
+    if (reportData?.summary) {
+      lines.push('2. 분석 요약', '-'.repeat(30), reportData.summary, '');
+    }
+    if (reportData?.report) {
+      lines.push(`${reportData?.summary ? '3' : '2'}. 상세 보고서`, '-'.repeat(30), reportData.report);
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeCase.id}_forensic_report.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [reportData, activeCase, submittedPrompt]);
+
   const handleApprovePlan = useCallback(async () => {
     try {
       await api.approvePlan(activeCase.id, { approved: true });
@@ -567,6 +596,7 @@ export default function ForensicApp() {
                 onOpenMcpModal={openMcpModal}
                 taskResults={taskResults}
                 elapsedTime={elapsedTime}
+                onDownloadReport={handleDownloadReport}
                 onEvidenceFilePick={e => {
                   const file = e.target.files?.[0];
                   if (file) setAttachedFile({ name: file.name });
