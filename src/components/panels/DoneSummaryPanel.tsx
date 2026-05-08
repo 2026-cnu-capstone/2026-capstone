@@ -41,8 +41,8 @@ export default function DoneSummaryPanel() {
   return (
     <div className="px-3.5 pt-2">
       <div className="mb-3">
-        <span className="text-[10px] font-semibold text-f-purple block mb-1">Agent</span>
-        <div className="bg-f-surface border border-f-border border-l-[3px] border-l-f-success rounded-r-md overflow-hidden">
+        <span className="text-[10px] font-semibold text-f-t3 tracking-wider uppercase block mb-1">Agent</span>
+        <div className="bg-f-surface border border-f-border rounded-md overflow-hidden">
           <div className="px-3 py-2.5 bg-slate-800 flex items-center justify-between">
             <span className="text-[12px] font-semibold text-slate-100 flex items-center gap-1.5">
               <FileText size={13} className="text-sky-300" /> 분석 완료 — 결과 요약
@@ -95,7 +95,7 @@ export default function DoneSummaryPanel() {
                       <div className="flex-1 bg-f-surface2 border border-f-border rounded px-2 py-1.5">
                         <div className="flex justify-between items-center mb-0.5">
                           <span className="text-[11px] font-medium text-f-t1">{item.name}</span>
-                          <span className="text-[9px] font-mono text-f-accent bg-blue-50 px-1 py-[1px] rounded">{item.mcp}</span>
+                          <span className="text-[9px] font-mono text-f-accent bg-f-accent-light px-1 py-[1px] rounded">{item.mcp}</span>
                         </div>
                         <span className="text-[10px] text-f-t3">{display}</span>
                       </div>
@@ -127,8 +127,8 @@ export default function DoneSummaryPanel() {
 
       {reportState === 'idle' && (
         <div className="mb-3">
-          <span className="text-[10px] font-semibold text-f-purple block mb-1">Agent</span>
-          <div className="bg-f-surface border border-f-border border-l-[3px] border-l-f-accent rounded-r-md p-3 flex flex-col gap-2.5">
+          <span className="text-[10px] font-semibold text-f-t3 tracking-wider uppercase block mb-1">Agent</span>
+          <div className="bg-f-surface border border-f-border rounded-md p-3 flex flex-col gap-2.5">
             <span className="text-xs text-f-t1">이 결과를 토대로 보고서를 생성하시겠습니까?</span>
             <div className="flex gap-1.5">
               <button
@@ -150,15 +150,15 @@ export default function DoneSummaryPanel() {
 
       {reportState === 'generating' && (
         <div className="mb-3">
-          <span className="text-[10px] font-semibold text-f-purple block mb-1">Agent</span>
+          <span className="text-[10px] font-semibold text-f-t3 tracking-wider uppercase block mb-1">Agent</span>
           <PulseLoader label="보고서 생성 중..." />
         </div>
       )}
 
       {reportState === 'done' && (
         <div className="mb-3">
-          <span className="text-[10px] font-semibold text-f-purple block mb-1">Agent</span>
-          <div className="bg-f-surface border border-f-border border-l-[3px] border-l-f-success rounded-r-md p-3 flex flex-col gap-2">
+          <span className="text-[10px] font-semibold text-f-t3 tracking-wider uppercase block mb-1">Agent</span>
+          <div className="bg-f-surface border border-f-border rounded-md p-3 flex flex-col gap-2">
             <span className="text-xs text-f-t1 flex items-center gap-1.5">
               <Check size={13} className="text-f-success" /> 보고서가 생성되었습니다.
             </span>
