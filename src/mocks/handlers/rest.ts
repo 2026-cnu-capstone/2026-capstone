@@ -25,7 +25,6 @@ export const restHandlers = [
       title: body.name ?? '새 케이스',
       status: 'idle',
       analyst: '-',
-      media: '-',
       size: '-',
       date: new Date().toISOString().slice(0, 10),
       progress: 0,

@@ -21,7 +21,6 @@ export interface Case {
   title: string;
   status: CaseStatus;
   analyst: string;
-  media: string;
   size: string;
   date: string;
   progress: number;
