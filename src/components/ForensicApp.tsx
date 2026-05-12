@@ -46,7 +46,6 @@ export default function ForensicApp() {
   const [newCaseModalOpen, setNewCaseModalOpen] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState('');
   const [caseSearchQuery, setCaseSearchQuery] = useState('');
-  const [caseStatusFilter, setCaseStatusFilter] = useState('all');
   const [caseAnalystFilter, setCaseAnalystFilter] = useState('all');
   const [caseSort, setCaseSort] = useState<CaseSort>('dateDesc');
   const [caseFilterMenu, setCaseFilterMenu] = useState<string | null>(null);
@@ -287,8 +286,6 @@ export default function ForensicApp() {
             cases={cases}
             caseSearchQuery={caseSearchQuery}
             setCaseSearchQuery={setCaseSearchQuery}
-            caseStatusFilter={caseStatusFilter}
-            setCaseStatusFilter={setCaseStatusFilter}
             caseAnalystFilter={caseAnalystFilter}
             setCaseAnalystFilter={setCaseAnalystFilter}
             caseSort={caseSort}
